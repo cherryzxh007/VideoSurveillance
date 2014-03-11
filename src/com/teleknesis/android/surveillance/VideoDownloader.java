@@ -5,7 +5,9 @@ import java.util.*;
 
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.pm.ActivityInfo;
 import android.media.MediaPlayer;
 import android.media.MediaPlayer.OnCompletionListener;
@@ -69,11 +71,13 @@ public class VideoDownloader extends Activity implements OnClickListener, Surfac
     int loopCount = 0;
     static int currentSong;
     static ArrayList<String> filesToDownload ;
+    static ArrayList<String> playedFiles;
     
      static EditText txtSender;
      static EditText txtReceiver;
      
      String lastFileUploaded;
+     String senderID;
      
      Test qq;
     
@@ -94,11 +98,10 @@ public void onCreate(Bundle savedInstanceState) {
     
 	//************ CREATE NEW MEDIA RECORDER OBJECT ****************
 	//************ Camera initialized & put on layout ***************
-    setContentView(R.layout.download);
+    setContentView(R.layout.download); 
 
-
-    //SurfaceView cameraView = (SurfaceView) findViewById(R.id.surfaceView1);
     cameraView = (VideoView) findViewById(R.id.videoView1);
+
     mHolder = cameraView.getHolder();
     mHolder.addCallback(this);
     mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
@@ -108,7 +111,6 @@ public void onCreate(Bundle savedInstanceState) {
 	//******************** CREATE BUTTON PLAY **********************
     btnPlay = (Button) findViewById(R.id.buttonPlay);         
     btnPlay.setOnClickListener(this);
-    mDialog = (ProgressBar) findViewById(R.id.mProgress);
     txtAllFiles = (EditText) findViewById(R.id.txtAllFiles);
 
 	
@@ -118,7 +120,9 @@ public void onCreate(Bundle savedInstanceState) {
 	mWakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK, "Ping");
 	mWakeLock.acquire();
 	
+	playedFiles = new ArrayList<String>();
 	filesToDownload = new ArrayList<String>();
+	
 	while (filesToDownload.size() < 1) {
 		try {
 			autoStreaming2();
@@ -133,6 +137,7 @@ public void onCreate(Bundle savedInstanceState) {
 			e.printStackTrace();
 		}
 	}
+	
 }
 
 
@@ -198,7 +203,7 @@ public void checkFilesFromServer() {
 		// get videos according to user name
 		
 		if (connected) {
-			String id = Home.txtReceiver.getText().toString();
+			senderID = Home.txtReceiver.getText().toString();
 			
 			Vector<ChannelSftp.LsEntry> allFiles;
 			
@@ -212,7 +217,7 @@ public void checkFilesFromServer() {
 				for (ChannelSftp.LsEntry entry:allFiles) {
 					String remoteFileName = getId(entry.getFilename());
 					//txtAllFiles.setText(txtAllFiles.getText() + id + remoteFileName.equals(id));
-					if (remoteFileName.equals(id)) {
+					if (remoteFileName.equals(senderID)) {
 						if (!filesToDownload.contains(entry.getFilename()) && (!new File (localFilePath + entry.getFilename()).exists())) {
 							filesToDownload.add(entry.getFilename());
 						}
@@ -272,33 +277,88 @@ public void autoStreaming() {
 }
 */
 
-public void getFilesFromServer(int i)  throws IOException, SftpException, InterruptedException  {
+public void getFilesFromServer()  throws IOException, SftpException, InterruptedException  {
 	 boolean connected = sshCh.isConnected();
 	 
 	 if (connected) {
+		 		String fileName = filesToDownload.get(currentSong);
+		 		while (playedFiles.contains(fileName)) {
+		 			currentSong++;
+		 			fileName = filesToDownload.get(currentSong);
+		 		}
 		 		
-		 		String fileName = filesToDownload.get(i);
+		 		
+		 		
 		 		qq = new Test(fileName); // download new file
-		 		//qq.execute();
 		 		cameraView.setVideoPath(getDataSource(qq.stream));
+		 		playedFiles.add(fileName);
+		 		
+		 		
+		 		/*
 		 		if (i == 0 && qq.isDone) {
+		 			playVideo2();
+		 		}
+		 		*/
+		 		if (qq.isDone) {
 		 			playVideo2();
 		 		}
 			
 	}
 }
 
+
 public void autoStreaming2() throws IOException, SftpException, InterruptedException {
 	checkFilesFromServer();
+	
+	AlertDialog.Builder builder = new AlertDialog.Builder(this);
+
+    builder.setTitle("New video");
+    builder.setMessage("Do you want to watch new video from " + senderID + " ?");
+    builder.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+
+        public void onClick(DialogInterface dialog, int which) {
+            // Do nothing but close the dialog
+        	currentSong = 0;
+    		try {
+				getFilesFromServer();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (SftpException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+            dialog.dismiss();
+        }
+
+    });
+
+    builder.setNegativeButton("No", new DialogInterface.OnClickListener() {
+
+        public void onClick(DialogInterface dialog, int which) {
+            // Do nothing
+            dialog.dismiss();
+        }
+    });
+
+    AlertDialog alert = builder.create();
+    
+	
+	
 	if (filesToDownload.size() >= 1) {
-		currentSong = 0;
-		getFilesFromServer(currentSong);
+		alert.show();
 	}
 }
 
 private void playVideo2() {
 	try {
 			if (!qq.stream.equals(null)) {
+				
+				txtAllFiles.setText(qq.fileName);
+				
 				cameraView.start();
 				cameraView.requestFocus();
 				cameraView.setOnCompletionListener(new OnCompletionListener() {
@@ -308,7 +368,7 @@ private void playVideo2() {
 							 Log.i("stream", "currentSong" + currentSong);
 							 if (currentSong + 1 < filesToDownload.size()) {
 								 currentSong++;
-								 getFilesFromServer(currentSong);
+								 getFilesFromServer();
 								 cameraView.start();
 								 cameraView.requestFocus();
 							 }

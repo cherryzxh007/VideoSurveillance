@@ -21,7 +21,7 @@ import com.jcraft.jsch.*;
  */
 public class Test {
 
-	static String localFile;
+	static String fileName;
 	static String remoteFile;
 	static int mFileLen;
 	static final String FTP_USER = "khuyen";
@@ -39,6 +39,9 @@ public class Test {
    
 
 	public Test(String testFile) throws IOException, SftpException {
+		
+		fileName = testFile;
+		
 		try {
 			session = sshClient.getSession(FTP_USER, FTP_HOST, FTP_PORT);
 		} catch (JSchException e) {
