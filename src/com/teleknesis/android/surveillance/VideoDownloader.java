@@ -1,6 +1,7 @@
 package com.teleknesis.android.surveillance;
 
 import java.io.*;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
 
@@ -70,15 +71,18 @@ public class VideoDownloader extends Activity implements OnClickListener, Surfac
     Button btnPlay;
     int loopCount = 0;
     static int currentSong;
-    static ArrayList<String> filesToDownload ;
-    static ArrayList<String> playedFiles;
+    static ArrayList<String> filesToDownload = new ArrayList<String>();
+    static ArrayList<String> filesForReceiver = new ArrayList<String>();
+    ArrayList<String> playedFiles= new ArrayList<String>();
+    static AlertDialog alert;
     
      static EditText txtSender;
      static EditText txtReceiver;
      
      String lastFileUploaded;
-     String senderID;
-     
+     static String localSenderID;
+     boolean canSaveVideo;
+     boolean connectedToServer = false;
      Test qq;
     
     static{
@@ -89,6 +93,10 @@ public class VideoDownloader extends Activity implements OnClickListener, Surfac
     
 @Override
 public void onCreate(Bundle savedInstanceState) {
+	
+	// DON'T MOVE THIS TO FRONT
+	//moveTaskToBack(true);
+	
     super.onCreate(savedInstanceState);
     requestWindowFeature(Window.FEATURE_NO_TITLE);
     getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -120,26 +128,28 @@ public void onCreate(Bundle savedInstanceState) {
 	mWakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK, "Ping");
 	mWakeLock.acquire();
 	
-	playedFiles = new ArrayList<String>();
-	filesToDownload = new ArrayList<String>();
+	//******************************************************************
 	
-	while (filesToDownload.size() < 1) {
-		try {
-			autoStreaming2();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (SftpException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}
+	initDownloader();
 	
 }
 
+
+public void initDownloader() {
+	// only download video from this sender
+		localSenderID = Home.wantedSenderID;
+		
+		// auto streaming
+		try {
+			autoStreaming2();
+		} catch (IOException e) {		
+			e.printStackTrace();
+		} catch (SftpException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+}
 
 public void onInfo(MediaRecorder arg0, int arg1, int arg2) {
 	// TODO Auto-generated method stub
@@ -164,6 +174,7 @@ public boolean connectToServer () {
 	} catch (JSchException e) {
 		// TODO Auto-generated catch block
 		e.printStackTrace();
+		connectedToServer = false;
 		return false;
 	}
 	java.util.Properties config = new java.util.Properties();
@@ -175,6 +186,7 @@ public boolean connectToServer () {
 	} catch (JSchException e) {
 		// TODO Auto-generated catch block
 		e.printStackTrace();
+		connectedToServer = false;
 		return false;
 	}
 	Log.i("download", "session-p1 done");
@@ -189,51 +201,58 @@ public boolean connectToServer () {
 	} catch (JSchException e) {
 		// TODO Auto-generated catch block
 		e.printStackTrace();
+		connectedToServer = false;
 		return false;
 	}
+	connectedToServer = true;
 	return true;
 	
 }
 
+@SuppressWarnings("unchecked")
 public void checkFilesFromServer() {
-	// connect to server
+		// connect to server
 		boolean connected = connectToServer();
-		//Toast.makeText(getApplicationContext(), Boolean.toString(connected), Toast.LENGTH_LONG).show();
 		
-		// get videos according to user name
-		
+		// get videos according to receiver's username
 		if (connected) {
-			senderID = Home.txtReceiver.getText().toString();
-			
+			String localReceiverID = Home.txtSender.getText().toString(); //txtSender acts as receiver's name in this case
+			Log.i("getfiles", localReceiverID);
 			Vector<ChannelSftp.LsEntry> allFiles;
-			
-			
-			
 			try {
 				sshCh.cd(remoteFilePath);
 				allFiles = (Vector<ChannelSftp.LsEntry>) (sshCh.ls("*.mp4"));
 				
-				
+				// get list of files send to the this receiver
 				for (ChannelSftp.LsEntry entry:allFiles) {
-					String remoteFileName = getId(entry.getFilename());
-					//txtAllFiles.setText(txtAllFiles.getText() + id + remoteFileName.equals(id));
-					if (remoteFileName.equals(senderID)) {
-						if (!filesToDownload.contains(entry.getFilename()) && (!new File (localFilePath + entry.getFilename()).exists())) {
-							filesToDownload.add(entry.getFilename());
-						}
+					// get the receiver's name from server files
+					String remoteReceiverID = getReceiverID(entry.getFilename());
+					
+					// create a list of files for this receiver from both wanted & unwanted senders
+					filesForReceiver = new ArrayList<String>(); 
+					
+					Log.i("getfiles", Boolean.toString(remoteReceiverID.equals(localReceiverID)));
+					
+					
+					// get only the files that have local receiver's ID
+					if (remoteReceiverID.equals(localReceiverID)) {
+						filesForReceiver.add(entry.getFilename());		
+						
 					}
 				}
+				
+	
 			} catch (SftpException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 			
-			Collections.sort(filesToDownload);
+			Collections.sort(filesForReceiver);
 			
 		}
 		
 		else {
-			txtAllFiles.setText("could not connect ot server");
+			Log.i("error","Could not connect to server");
 		}
 }
 
@@ -279,7 +298,7 @@ public void autoStreaming() {
 
 public void getFilesFromServer()  throws IOException, SftpException, InterruptedException  {
 	 boolean connected = sshCh.isConnected();
-	 
+	 Log.i("files to download size", Integer.toString(filesToDownload.size()));
 	 if (connected) {
 		 		String fileName = filesToDownload.get(currentSong);
 		 		while (playedFiles.contains(fileName)) {
@@ -287,69 +306,42 @@ public void getFilesFromServer()  throws IOException, SftpException, Interrupted
 		 			fileName = filesToDownload.get(currentSong);
 		 		}
 		 		
+		 		// see if videos can be saved
+	 			if (fileName.contains("_s.mp4")) {
+	 				canSaveVideo = true;
+	 			} else {
+	 				canSaveVideo = false;
+	 			}
+	 			
+	 			// download new file
+		 		qq = new Test(fileName); 
 		 		
-		 		
-		 		qq = new Test(fileName); // download new file
+		 		// play downloaded video
 		 		cameraView.setVideoPath(getDataSource(qq.stream));
 		 		playedFiles.add(fileName);
 		 		
-		 		
-		 		/*
-		 		if (i == 0 && qq.isDone) {
-		 			playVideo2();
-		 		}
-		 		*/
 		 		if (qq.isDone) {
 		 			playVideo2();
 		 		}
 			
 	}
+	
 }
 
-
 public void autoStreaming2() throws IOException, SftpException, InterruptedException {
-	checkFilesFromServer();
-	
-	AlertDialog.Builder builder = new AlertDialog.Builder(this);
-
-    builder.setTitle("New video");
-    builder.setMessage("Do you want to watch new video from " + senderID + " ?");
-    builder.setPositiveButton("Yes", new DialogInterface.OnClickListener() {
-
-        public void onClick(DialogInterface dialog, int which) {
-            // Do nothing but close the dialog
-        	currentSong = 0;
-    		try {
-				getFilesFromServer();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (SftpException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (InterruptedException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
+	// get list of files from WANTED receiver only
+	for (String file:filesForReceiver) {
+		String remoteSenderID = getSenderID(file);
+		
+		if (remoteSenderID.equals(localSenderID)) { 
+			if (!filesToDownload.contains(file) && (!new File (localFilePath + file).exists())) {
+				filesToDownload.add(file);
+				Log.i("filesToDownload.size()", Integer.toString(filesToDownload.size()));
 			}
-            dialog.dismiss();
-        }
-
-    });
-
-    builder.setNegativeButton("No", new DialogInterface.OnClickListener() {
-
-        public void onClick(DialogInterface dialog, int which) {
-            // Do nothing
-            dialog.dismiss();
-        }
-    });
-
-    AlertDialog alert = builder.create();
-    
-	
-	
-	if (filesToDownload.size() >= 1) {
-		alert.show();
+		}
+	}		
+	if (filesToDownload.size() > 0) {
+		getFilesFromServer();
 	}
 }
 
@@ -398,13 +390,26 @@ private void playVideo2() {
 	}
 }
 
-
 private String getDataSource(InputStream stream) throws IOException {
 	
 	if (stream == null)
 		throw new RuntimeException("stream is null");
-	File temp = File.createTempFile("mediaplayertmp", "dat");
-	temp.deleteOnExit();
+	
+	File temp;
+	
+	if (!canSaveVideo) {
+		temp = File.createTempFile("mediaplayertmp", ".mp4");
+		temp.deleteOnExit();
+	}
+	else {
+		 File dir = new File(localFilePath);
+		 if (!dir.exists()) {
+			 dir.mkdirs();
+		 }
+		temp = new File(localFilePath + "VID_" + localSenderID + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".mp4");
+	}
+	
+
 	String tempPath = temp.getAbsolutePath();
 	FileOutputStream out = new FileOutputStream(temp);
 	byte buf[] = new byte[128000];
@@ -422,8 +427,6 @@ private String getDataSource(InputStream stream) throws IOException {
 	return tempPath;
 }
 
-
-
 public void onClick(View arg0) {
 	
 	try {
@@ -436,7 +439,6 @@ public void onClick(View arg0) {
 		e.printStackTrace();
 	}
 }
-
 
 /**
 OnCompletionListener completionListener=new OnCompletionListener() {
@@ -513,7 +515,7 @@ public void TestPlayingVideo(View v) {
 }
 */
 
-private String getId(String filename) {
+public String getSenderID(String filename) {
 	int _1stPos = 0;
 	int _2ndPos = 0;
 	for (int i = 0; i < filename.length(); i++) {
@@ -530,4 +532,35 @@ private String getId(String filename) {
 	}
 	return (filename.substring(_1stPos+1,_2ndPos));
 }	
+
+public String getReceiverID(String filename) {
+	int startPos = filename.indexOf(getSenderID(filename));
+	
+	int _1stPos = 0;
+	int _2ndPos = 0;
+	
+	for (int i = startPos; i < filename.length(); i++) {
+		if (filename.charAt(i) == '_') {
+			_1stPos = i;
+			for (int j = i+1; j < filename.length(); j++) {
+				if (filename.charAt(j) == '_') {
+					_2ndPos = j;
+					break;
+				}
+			}
+			if (_1stPos != 0) break;
+		}
+	}
+	return (filename.substring(_1stPos+1,_2ndPos));
+}	
+
+
+@Override
+protected void onStop() {
+ super.onStop();
+ if (alert != null) {
+  alert.dismiss();
+  alert = null;
+ }
+}
 }

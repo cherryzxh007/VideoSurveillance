@@ -30,6 +30,7 @@ import android.view.View.OnClickListener;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.Toast;
 
@@ -73,6 +74,7 @@ public class VideoRecorder extends Activity implements OnClickListener, SurfaceH
     
      static EditText txtSender;
      static EditText txtReceiver;
+     static CheckBox chkSaveVideo;
      
      String lastFileUploaded;
     
@@ -106,10 +108,12 @@ public void onCreate(Bundle savedInstanceState) {
     
 	//******************** CREATE BUTTON CAPTURE **********************
    
+    chkSaveVideo = (CheckBox) findViewById(R.id.chkSaveVideo);
     txtSender = (EditText) findViewById(R.id.txtSender);
     txtReceiver = (EditText) findViewById(R.id.txtReceiver);
     btnCapture = (Button) findViewById(R.id.btnCapture);         
     btnCapture.setOnClickListener(this);
+    
 
 	//******************************************************************
 
@@ -162,7 +166,14 @@ public static void initRecorder() { // called everytime new video is recorded
 	// set each video with a new file name
     //txtSender.setText("KDuong");
     String senderID = Home.txtSender.getText().toString();
-    String filePath = "/sdcard/Surveillance/" + "VID_" + senderID + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".mp4";
+    String receiverID = Home.txtReceiver.getText().toString();
+    String filePath = "/sdcard/Surveillance/" + "VID_" + senderID + "_" + receiverID + "_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+    
+    if (Home.chkSaveVideo.isChecked()) {
+    	filePath = filePath + "_s"; // show that video should be saved
+    }
+    		
+    filePath = filePath + ".mp4";
     mFiles.add(filePath);
     mRecorder.setOutputFile(filePath);
 
